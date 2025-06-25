@@ -7,8 +7,10 @@
 ## 运行
 
 ```
-cargo run
+cargo run --example xxx
 ```
+
+其中 ``xxx`` 可以是 ``examples/`` 下任意 ``.rs`` 文件不带后缀的文件名
 
 ## 关于 Rust tokio 库
 
