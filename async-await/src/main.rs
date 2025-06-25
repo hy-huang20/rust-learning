@@ -1,4 +1,6 @@
-use async_await::task::{Task, simple_executor::SimpleExecutor};
+use async_await::task::{
+    Task, simple_executor::SimpleExecutor,
+};
 
 fn main() {
     println!("Hello World!");
