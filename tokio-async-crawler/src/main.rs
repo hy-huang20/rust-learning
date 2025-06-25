@@ -3,6 +3,7 @@ use std::{any::Any, time::{SystemTime, UNIX_EPOCH}};
 use reqwest::Client;
 use json;
 use tokio::join;
+use futures::future::join_all;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -11,18 +12,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     url_gen(&mut url_vec,origin_url);
     let start_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
     let client = Client::builder().build().unwrap();
-    let mut handles = Vec::with_capacity(10);
-    for url in url_vec{
-        handles.push(tokio::spawn(handle_url(url)));
-    }
-    for handle in handles {
-        handle.await; // 而且每个 handle 必须执行完才能执行下一个 handle
-    }
+    let handles = url_vec.into_iter().map(|url| tokio::spawn(handle_url(url))).collect::<Vec<_>>();
+    let results = join_all(handles).await;
     let end_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
     println!("cost time is {:?}",end_time-start_time);
     return Ok(());
 }
-
 
 fn url_gen(url_vec:&mut Vec<String>,origin_url:&str){    
     let step = 15;
