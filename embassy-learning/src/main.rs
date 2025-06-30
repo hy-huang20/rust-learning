@@ -1,8 +1,8 @@
-use embassy_executor::Spawner;
-use embassy_time::Timer;
+use embassy_executor::{Spawner, task, main};
+use embassy_time::{Timer, Duration};
 use log::*;
 
-#[embassy_executor::task]
+#[task]
 async fn run() {
     loop {
         info!("tick");
@@ -10,7 +10,17 @@ async fn run() {
     }
 }
 
-#[embassy_executor::main]
+#[task]
+/// Task that ticks periodically
+async fn tick_periodic() -> ! {
+    loop {
+        println!("tick 1!");
+        // async sleep primitive, suspends the task for 500ms.
+        Timer::after(Duration::from_millis(500)).await;
+    }
+}
+
+#[main]
 async fn main(spawner: Spawner) {
     env_logger::builder()
         .filter_level(log::LevelFilter::Debug)
@@ -18,4 +28,5 @@ async fn main(spawner: Spawner) {
         .init();
 
     spawner.spawn(run()).unwrap();
+    spawner.spawn(tick_periodic()).unwrap();
 }
