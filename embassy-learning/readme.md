@@ -10,4 +10,17 @@
 - ``run()``：在命令行每秒输出一个单词 tick
 - ``tick_periodic()``：在命令行每 0.5 秒输出一个 tick 1
 
-注意，由于文档中 System Description/Time-keeping/Delay 一节中涉及到的库 ``embedded_hal_async`` 是专为嵌入式项目使用的，所以没有将相应代码添加进来。
+## 宏展开
+
+```
+# 安装
+cargo install cargo-expand
+
+# 使用（在项目根目录运行）
+cargo expand          # 展开整个 crate
+cargo expand --lib    # 仅展开库代码
+cargo expand --tests  # 展开测试代码
+cargo expand path::to::item  # 展开特定模块/函数
+```
+
+会在命令行输出展开后的代码
