@@ -10,6 +10,7 @@ fn run() {
 }
 
 #[main]
+#[test]
 async fn main(spawner: Spawner) {
     spawner.spawn(run()).unwrap();
 }

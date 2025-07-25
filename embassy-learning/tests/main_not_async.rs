@@ -24,6 +24,7 @@ use embassy_executor::{Spawner, main};
 /// 上面的 println!("main std") 行为手动添加
 /// 
 #[main]
+#[test]
 fn main(_spawner: Spawner) {
     // 函数体置空
 }
