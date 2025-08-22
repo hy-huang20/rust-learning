@@ -1,3 +1,0 @@
-[submodule "embassy-learning/embassy"]
-	path = embassy-learning/embassy
-	url = https://github.com/embassy-rs/embassy.git
