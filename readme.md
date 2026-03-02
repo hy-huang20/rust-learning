@@ -16,8 +16,6 @@
 |attribute-macros|||
 |embassy-learning||||
 |tokio-async-crawler|||
-|web-server|||
-|riscv-emulator|||
 
 ## 日志
 
