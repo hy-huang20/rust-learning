@@ -34,3 +34,15 @@ warning: spurious network error (3 tries remaining): [28] Timeout was reached (C
 [http]
 proxy = "ip:port"
 ```
+
+或者也可以按照[rCore-2025S 课程实验指导书](https://learningos.cn/rCore-Tutorial-Guide-2025S/0setup-devel-env.html)中的方法换源：
+
+>最好把 Rust 包管理器 cargo 镜像地址 crates.io 也替换成中国科学技术大学的镜像服务器，来加速三方库的下载。 打开或新建 `~/.cargo/config` 文件，添加以下内容：
+>
+>```
+>[source.crates-io]
+>replace-with = 'ustc'
+>
+>[source.ustc]
+>registry = "sparse+https://mirrors.ustc.edu.cn/crates.io-index/"
+>```
