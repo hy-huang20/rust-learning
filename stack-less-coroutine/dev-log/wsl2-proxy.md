@@ -16,7 +16,9 @@ warning: spurious network error (3 tries remaining): [28] Timeout was reached (C
 
 ### 1.2. 解决方法
 
-首先 `env | grep -i proxy` 检查 `http_proxy`, `https_proxy`, `ftp_proxy` 的值 `http://ip:port`。这里的 `port` 为本地 clash 客户端设置的端口值，这里的 `ip` 经测试使用 `/etc/resolv.conf` 中的 ipv4 地址（即 windows 创建的虚拟网卡 vEthernet(WSL) 的 ipv4 地址，作为 WSL 的默认网关，ip 固定）或者本地 WLAN 的 ipv4 地址（最好不要这样做，ip 为动态分配）均可使 `curl www.google.com` 成功获取到内容。
+发现是本地使用的 clash verge 客户端 `allow lan` 的问题。我在[这个 issue](https://github.com/clash-verge-rev/clash-verge-rev/issues/1383) 中找到解决方法，可以根据其中[这条 comment](https://github.com/clash-verge-rev/clash-verge-rev/issues/1383#issuecomment-2239291941) 的做法，在`允许应用通过防火墙`中添加 clash verge 安装文件夹里的 `verge-mihomo.exe` 进去，问题即解决。
+
+`env | grep -i proxy` 检查 `http_proxy`, `https_proxy`, `ftp_proxy` 的值 `http://ip:port`。这里的 `port` 为本地 clash 客户端设置的端口值；这里的 `ip` 经测试使用 `/etc/resolv.conf` 中的 ipv4 地址（即 windows 创建的虚拟网卡 vEthernet(WSL) 的 ipv4 地址，作为 WSL 的默认网关，ip 固定）或者本地 WLAN 的 ipv4 地址（最好不要这样做，ip 为动态分配）均可使 `curl www.google.com` 成功获取到内容。
 
 ## 2. cargo install 仍然失败
 
