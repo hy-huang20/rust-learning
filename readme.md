@@ -15,3 +15,4 @@
 |embassy-learning||||
 |tokio-async-crawler|||
 |stack-less-coroutine|||
+|futures-explained-in-200-lines-of-rust|||
