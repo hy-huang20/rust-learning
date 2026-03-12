@@ -1,3 +1,2 @@
-*
-
-!embassy-learning/
+target/
+.vscode/
