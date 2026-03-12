@@ -1,3 +1,2 @@
-*
-
-!tokio-async-crawler/
+target/
+.vscode/
