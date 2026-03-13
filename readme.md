@@ -40,3 +40,37 @@
 
 unsafe fn wake(_: *const ()) { }
 ```
+
+task 只有两个状态，比一般实现少了个 `State::Ready` 的状态。
+
+```rust
+pub enum State {
+    Halted,
+    Running,
+}
+```
+
+- `Executor` 的 ready queue 中放着一系列 `non-leaf-future` 即 main.rs 里面的 async 块
+
+- `leaf-future` 为 `Waiter` future，`Waiter` future 被设计为被 `Executor` 轮询**两次**就返回 `Poll::Ready`
+
+- `Executor` 取出并轮询队首 future 如果返回 `Poll::Pending` 会将其重新插入队尾
+
+所以造成了这样的输出：
+
+```bash
+Running
+1 A
+2 A
+3 A
+1 B
+2 B
+3 B
+1 C
+2 C
+3 C
+1 D
+2 D
+3 D
+Done
+```
