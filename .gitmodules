@@ -1,4 +1,4 @@
 [submodule "embassy"]
 	path = embassy
-	url = https://github.com/embassy-rs/embassy.git
+	url = https://github.com/hy-huang20/embassy.git
 	branch = embassy-learning
