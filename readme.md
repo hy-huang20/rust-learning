@@ -44,15 +44,162 @@ Rust 中的异步使用生成器实现。因此为了理解异步是如何工作
 
 ### 2.6. 完整的例子
 
+#### 2.6.1. 概述
+
 见 `src/main.rs`：
 
 - 执行器 Executor
-    - `block_on`：在一个 loop 里不断调用 `future.poll()`
+    - `block_on`：在一个 loop 里不断调用 `mainfut.poll()`
     - `Parker`：基于 `Mutex` 和 `Condvar`
 - 反应器 Reactor
     - `Reactor`
-- leaf-future
+- Leaf-Future
     - `Task`
 - 唤醒器 Waker
     - `MyWaker`
     - `VTABLE`
+- 任务状态 `TaskState`
+- 事件 `Event`
+
+#### 2.6.2. 梳理
+
+##### Non-Leaf & Leaf Future
+
+各个 `async` 块和叶子 future 的关系：
+
+- `mainfut`
+    - `fut1`
+        - `Task` leaf-future
+    - `fut2`
+        - `Task` leaf-future
+
+##### 状态转移
+
+```rust
+enum TaskState {
+    Ready,
+    NotReady(Waker),
+    Finished,
+}
+```
+
+`TaskState` 状态转移图：
+
+```mermaid
+stateDiagram
+    [*] --> NotReady: 1
+    NotReady --> NotReady: 2
+    NotReady --> Ready: 3
+    Ready --> Finished: 4
+    
+```
+
+含义：
+
+1. task 第一次被 poll 在 `Reactor` 注册：`Task::poll() -> else {...}`
+2. task 还没有准备好：`Task::poll() -> else if {...}`
+3. `Reactor` 唤醒 task：`Reactor::wake()`
+4. task 执行完成：`Task::poll() -> if r.is_ready(self.id) {...}`
+
+##### Task::poll()
+
+`task.await` 调用 `poll` 去 `Reactor` 检查当前 `task.id` 任务的状态：
+
+- `TaskState::Ready`
+    - 修改状态为 `TaskState::Finished`
+    - 返回 `Poll::Ready(self.id)` 结束 `task.await`
+    - 输出 `Got {task.id} at time: {...}` 结束 `fut[1-2].await`
+    - 在 `mainfut` 中继续往后执行
+
+- 任务注册过在 `Reactor::tasks` 中但没 `TaskState::Ready`
+    - 处于 `TaskState::NotReady` 状态
+    - 用新 `Waker` 覆盖旧的（这步还不太理解）
+    - 返回 `Poll::Pending` 后 `block_on` 继续循环
+
+- 任务没注册过
+    - 表明该任务第一次被 poll 到
+    - 注册并返回 `Poll::Pending`
+    - `block_on()` 阻塞在 `parker.park()` 上等待别的 `parker` 通知
+
+##### 事件
+
+这个项目中没有实际来自底层硬件的事件来通知 `Reactor 线程`, 而是使用 `std::sync::mpsc::channel` 模拟事件。`mpsc` 即**多生产者-单消费者模型**。`channel::<Event>()` 返回 `(Sender<Event>, Receiver<Event>)`, 前者 tx 表示生产者，后者 rx 表示消费者，`Reactor::dispatcher` 拿到的是 tx，在 `Reactor::new()` 中拿到。
+
+`Reactor::dispatcher` 可以发送两类事件：
+
+```rust
+enum Event {
+    Close,
+    Timeout(u64, usize),
+}
+```
+
+- 在 `Reactor::register()` 任务注册时发送 `Timeout` 事件
+- 在 `Reactor` 被 drop 时发送 `Close` 事件
+
+##### 线程
+
+项目依赖于 `std::thread` 线程模型。固定存在的 2 个线程：
+
+- `主线程`：从 main 函数开始执行，通过`条件变量`阻塞在 `block_on()` 的 `parker.park()` 上等待唤醒
+
+- `Reactor 线程`：在 `main() -> Reactor::new()` 中通过 `std::thread::spawn()` 创建，返回的 handle 存于 `Reactor` 中。**负责从 channel 中接收 `Event` 事件**，在没有接收到事件时阻塞在 `for event in rx` 行
+
+此外还有为每个 `Timeout` 事件创建的线程：每当 `Reactor 线程`从 channel 中收到 `Event::Timeout(duration, id)` 事件（模拟从底层硬件收到事件如中断）后其便创建一个新线程**处理事件**：`sleep` 一段 duration 时间后执行 `Reactor::wake(id)` 唤醒操作。唤醒`主线程`的 `parker.unpark()` 就是在这个线程中被调用的。
+
+#### 2.6.3. 三组件
+
+##### Executor
+
+这个项目里面没有显式定义 `Executor` struct（在其它某些项目里也有可能不会显式定义 `Reactor` struct），但并不是没有**执行器**，而是说执行器的权能由 `block_on()` 承担了。 
+
+##### Reactor
+
+```rust
+struct Reactor {
+    dispatcher: Sender<Event>,
+    handle: Option<JoinHandle<()>>,
+    tasks: HashMap<usize, TaskState>,
+}
+```
+
+- `dispatcher`：生产者，负责发送事件
+- `handle`：对应 `Reactor 线程`
+- `tasks`：哈希表查找某个 id 的 task 对应的 `TaskState`
+
+一般地，`Reactor` 监测硬件事件，并通过 `Waker` 通知 `Executor` 执行。但这里的“事件”是**由 `Reactor` 模拟**的。
+
+
+##### Waker
+
+```rust
+struct MyWaker {
+    parker: Arc<Parker>,
+}
+```
+
+每个 waker 里面都有一个自己的 parker, 一个线程上的 parker 调用 `unpark()` 可以解除另外某个线程上的 `parker.park()` 的阻塞状态。
+
+根据 `VTABLE` 的设置：
+
+- 调用 `waker.wake()` 会实际调用到 `mywaker_wake()`
+- 调用 `waker.clone()` 会实际调用到 `mywaker_clone()`
+
+`Waker` 的调用流程：
+
+- `Reactor::wake()`：任务状态由 `NotReady` 设为 `Ready`
+- `waker.wake()`：动态多态
+- `mywaker_wake() -> waker_arc.parker.unpark()`：基于条件变量，修改 `park()` 中循环条件，通知某个 `parker.park()` 从阻塞恢复继续执行
+- `block_on()`：循环得以继续
+
+
+#### 2.6.4. 输出
+
+至于为什么输出总是以下这样：
+
+```bash
+Got 1 at time: 1.00.
+Got 2 at time: 3.00.
+```
+
+因为 `thread::sleep()` 的时间在 `Task` 初始化的时候就设定好了，即 `Task::data` 字段，将会成为 `Event::Timeout(duration, id)` 中的 duration，成为 `thread::sleep(Duration::from_secs(duration))` 中的 duration。
