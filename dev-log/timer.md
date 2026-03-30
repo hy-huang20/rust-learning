@@ -41,7 +41,7 @@ impl Future for Timer {
 
 下面分析 embassy-rp 树莓派的代码，位于 [embassy-rp/src/time_driver.rs](https://github.com/hy-huang20/embassy/blob/main/embassy-rp/src/time_driver.rs)。
 
-rp 提供了自己的时间驱动代码 `TimerDriver`，实现了以下 3 个函数：
+rp 提供了自己的时间驱动代码 `TimerDriver`，实现了以下 3 个非 trait 函数：
 
 - `set_alarm()` 设置硬件下一次触发的时间 timestamp（硬件设置）并记录到 `TimerDriver.alarms.timestamp` 中（软件设置）。如果发现 timestamp 已过期则取消上述硬件/软件设置并返回 false 表示需要 `next_expiration()` 马上处理 timer queue 中的过期项，因此可以在 `TimerDriver::schedule_wake()` 中看到循环 `set_alarm()` 直到返回 true 的代码
 
@@ -82,7 +82,7 @@ impl Driver for TimerDriver {
 `now()` 这么写是因为 64 位的时间被分成高低 32 位的两个寄存器，需要保证在读取低位时高位没有发生进位。
 
 `schedule_wake()`
-- 在临界区调用 timer queue 的 `Queue::schedule_wake()` 把 `Timer Future` 的过期时间 `expires_at` 设置为 at，返回 true 说明当前 `Timer Future` 原不在 timer queue 中或者需要提前唤醒更新 `expires_at`
+- 在临界区调用 timer queue 的 `Queue::schedule_wake()` 把 `Timer Future` 登记为 at 时唤醒。返回 true 说明当前 `Timer Future` 原不在 timer queue 中（则将 timer queue item 放入 timer queue）或者需要提前唤醒更新 `expires_at` （则更新 timer queue item）
 - `Queue::next_expiration()` 检查 timer queue 中所有项若超时则 `wake_task()` 并踢出。返回值为下一次最近需要唤醒的时间。 
 
 >代码中的 `Queue` 是 embassy-time-queue-utils/src/queue_integrated.rs 提供的 timer queue。注意和 embassy 的 RunQueue 进行区分。[timer queue 分析](https://github.com/hy-huang20/rust-os-learning/blob/ae72a74f489ec1d993a5b515e4119e7b8405d1bb/%E8%BF%87%E7%A8%8B%E8%AE%B0%E5%BD%95/rust/rust%E5%BC%82%E6%AD%A5/Embassy/queue.md)
