@@ -44,7 +44,7 @@ pub fn task_from_waker(waker: &Waker) -> TaskRef {
 }
 ```
 
-`from_task()` 参数 `TaskRef` 本质上就是一个 `TaskHeader`：
+`from_task()` 参数 `TaskRef` 本质上就是一个 `TaskHeader` **指针**：
 
 ```rust
 pub struct TaskRef {
@@ -67,6 +67,8 @@ pub(crate) struct TaskHeader {
 ```
 
 ## 2. 用途
+
+下面介绍的两个链表都不是额外分配链表节点，而是复用每个任务自己的 `TaskHeader` 相应的 item 字段。
 
 ### 2.1. timer queue
 
