@@ -78,9 +78,9 @@ pub(crate) struct State {
 |task state|State::spawned|State::run_queued|备注|
 |---|---|---|---|
 |``Not spawned``|false|false|初始状态：槽位为空没有正在运行的 future|
-|``Spawned\|Run enqueued``|true|true|`Ready`：任务 future 存在但不在 RunQueue 中所以不会马上被 poll|
-|``Spawned``|true|false|`Running`：任务 future 存在且在 RunQueue 中等待下次 executor.poll() 执行 poll_fn|
-|``Not spawned\|Run enqueued``|false|true|`Exited`：此时 poll_fn 已经被换成 poll_exited 了，任务已经执行结束了但还在 RunQueue 中等下次 executor.poll() 被清理|
+|``Spawned\|Run enqueued``|true|true|任务 future 存在且在 RunQueue 中等待下次 executor.poll() 执行 poll_fn|
+|``Spawned``|true|false|任务 future 存在但不在 RunQueue 中所以不会马上被 poll|
+|``Not spawned\|Run enqueued``|false|true|此时 poll_fn 已经被换成 poll_exited 了，任务已经执行结束了但还在 RunQueue 中等下次 executor.poll() 被清理|
 
 状态修改函数。注意以下列出的状态修改函数只是单纯修改状态，没有直接执行 poll：
 
@@ -93,7 +93,38 @@ pub(crate) struct State {
 |5|`State::run_dequeue()`|后续把结束任务从 RunQueue 中拿出 poll 执行空的 poll_exited|
 |6|`State::run_enqueue()`|已经退出的任务收到迟到的 wake 被短暂地重新放进 RunQueue，等下一轮 poll 时清出 RunQueue|
 
-顺便说一下，主要的清理工作在第 4 步中执行了：`TaskStorage::poll -> Poll::Ready`：
+## 3. 补充
+
+### 初始化
+
+任务首次 spawn 的时候设置 `poll_fn` 并将 `TaskStorage::future` 设置为任务 future：`宏展开代码 -> TaskPool::_spawn_async_fn() -> TaskPool::spawn_impl() -> AvailableTask::initialize_impl()`
+
+```rust
+impl<F: Future + 'static> AvailableTask<F> {
+    fn initialize_impl<S>(self, future: impl FnOnce() -> F) -> SpawnToken<S> {
+        unsafe {
+            self.task.raw.poll_fn.set(Some(TaskStorage::<F>::poll));
+            self.task.future.write_in_place(future);
+
+            let task = TaskRef::new(self.task);
+
+            SpawnToken::new(task)
+        }
+    }
+}
+```
+
+上面的 `self.task` 即为对应 `TaskStorage` 的引用：
+
+```rust
+pub struct AvailableTask<F: Future + 'static> {
+    task: &'static TaskStorage<F>,
+}
+```
+
+### 清理
+
+主要的清理工作在第 `4` 步中执行了：`TaskStorage::poll -> Poll::Ready`：
 
 ```rust
 unsafe fn poll(p: TaskRef) {
@@ -115,3 +146,54 @@ unsafe fn poll(p: TaskRef) {
     }
 }
 ```
+
+### __pender()
+
+`SyncExecutor::enqueue()` 当 `RunQueue` 出现从无到有的情况时便会调用 `__pender()` 函数：
+
+```rust
+unsafe fn enqueue(&self, task: TaskRef, l: state::Token) {
+    if self.run_queue.enqueue(task, l) {
+        self.pender.pend();
+    }
+}
+```
+
+`SyncExecutor::enqueue()` 被调用出现在两个地方：（函数按照列出顺序被调用）
+
+- 任务首次 spawn（步骤 `1`）
+    - `SyncExecutor::spawn()`
+    - `SyncExecutor::enqueue()`
+    - `pender.pend()`
+    - `__pender()`
+- 任务被 wake 时（步骤 `3`）
+    - `Waker::wake()`
+    - `wake_task(task)`
+    - `header.state.run_enqueue(...)`
+    - `executor.enqueue(task, l)`
+    - `pender.pend()`
+    - `__pender()`
+
+### 执行 poll
+
+这里仅以 [cortex_m](https://github.com/hy-huang20/rust-os-learning/blob/main/%E8%BF%87%E7%A8%8B%E8%AE%B0%E5%BD%95/rust/rust%E5%BC%82%E6%AD%A5/Embassy/executor/arch/cortex_m.md) 实现中最简单的线程模式 thread mode 举例：
+
+- `__pender()` 执行 `asm!("sev")`
+- `thread::Executor::run()` loop 中 `asm!("wfe")` 唤醒继续执行
+- loop 执行到 `Executor::poll()`
+- `SyncExecutor::poll()`
+
+```rust
+impl SyncExecutor {
+    pub(crate) unsafe fn poll(&'static self) {
+        self.run_queue.dequeue_all(|p| {
+            let task = p.header();
+            // Run the task
+            task.poll_fn.get().unwrap_unchecked()(p);
+        });
+    }
+}
+```
+
+这里的 `poll_fn` 如果是任务初次 spawn 时设置的 `TaskStorage::<F>::poll` 便会去 poll 存放在 `TaskStorage` 中的任务 future（即任务 async 函数那个 non-leaf future）。
+
